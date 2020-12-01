@@ -1,0 +1,871 @@
+---
+title: "Tutorial - 1 - Deep Learning"
+output: html_notebook
+---
+
+# Task-1 : Explore the Fisher’s linear discriminant analysis (LDA)
+
+a. Error probability of class '1' is the estimation of the function $\Phi$, which is the Cumulative Distribution Function. $\Phi = \frac{\hat{u}_0}{\sqrt{\hat{v}_0}}$
+
+```{r}
+rm(list=ls())
+library(MASS)
+library(ggplot2)
+
+#-- Compute the model of class 1 and class 0.
+n_0 = 1000
+n_1 = 1000
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+class_0 = mvrnorm(n_0, c(0,0), sqrt(Q))
+class_1 = mvrnorm(n_1, c(1,1), sqrt(Q))
+
+n = n_0 + n_1
+d = 2
+pi_0 = pi_1 = 0.5
+
+#-- Compute the common covariance matrix as specified in the course
+S = (1/(n-2))*cov(class_1)+cov(class_0)
+
+delta_hat_sq = ((n - d -1)/n)*t(colMeans(class_1) - colMeans(class_0)) %*% solve(S) %*% (colMeans(class_1) - colMeans(class_0)) - (n+2)*d/(n_0*n_1)
+
+v_hat_0 = (1/(1-(d/n))**2)*(delta_hat_sq + d/(n*pi_0*pi_1))
+u_hat_0 = -delta_hat_sq/(2*(1-d/n))
+alfa = u_hat_0/sqrt(v_hat_0)
+
+#-- Compute the error rate (approx 28%)
+estimated = pnorm(alfa)
+estimated
+```
+
+b. Build a LDA function to compute the error rate over a simulation of 2000 draws and compare it against the empirical error rate
+
+```{r}
+estimated = 0
+n_0 = 10000
+n_1 = 10000
+n = n_0 + n_1
+for (i in 1:2000){
+  class_0 = mvrnorm(n_0, c(0,0), sqrt(Q))
+  class_1 = mvrnorm(n_1, c(1,1), sqrt(Q))
+  S = (1/(n-2))*cov(class_1)+cov(class_0)
+  delta_hat_sq = ((n - d -1)/n)*t(colMeans(class_1) - colMeans(class_0)) %*% solve(S) %*% (colMeans(class_1) - colMeans(class_0)) - (n+2)*d/(n_0*n_1)
+  v_hat_0 = (1/(1-(d/n))**2)*(delta_hat_sq + d/(n*pi_0*pi_1))
+  u_hat_0 = -delta_hat_sq/(2*(1-d/n))
+  alfa = u_hat_0/sqrt(v_hat_0)
+  estimated[i] = pnorm(alfa)
+}
+estimated[1:5]
+```
+
+
+```{r}
+#-- Build LDA and compute the error over 2000 draws
+
+error = 0
+for (i in 1:2000){
+  #-- Generate data for classes 0 and 1
+  class_0 = mvrnorm(n_0, c(0,0), sqrt(Q))
+  class_1 = mvrnorm(n_1, c(1,1), sqrt(Q))
+  
+  #-- Build the data frame
+  df_0 <- as.data.frame(class_0)
+  df_1 <- as.data.frame(class_1)
+  names(df_0)[1] = "X1"
+  names(df_0)[2] = "X2"
+  names(df_1)[1] = "X1"
+  names(df_1)[2] = "X2"
+  df_class_0 = cbind(df_0, Y = 0)
+  df_class_1 = cbind(df_1, Y = 1)
+  df = rbind(df_class_0, df_class_1)
+  
+  #-- Randomly shuffle
+  rows <- sample(nrow(df))
+  df <- df[rows,]
+  row.names(df) <- NULL
+  
+  #-- build lda and get predictions
+  model <- lda(Y~., data = df)
+  Y_pred = predict(model, df)$class
+  Y_true = df$Y
+  error[i] = mean(Y_pred != Y_true)
+  
+}
+error[1:5]
+```
+
+c. Compare these two distributions of error and verify their normality visually
+
+```{r}
+#-- Plot the density function to verify normality
+plot(density(estimated), main = "Density Functions of errors")
+lines(density(error), col = 'red')
+
+#-- plot qqnorm plot to verify normality (should be close to linear)
+qqnorm(estimated, main = "Normal QQ-plot for estmated error")
+qqnorm(error, main = "Normal QQ-plot for LDA error")
+```
+```{r}
+#-- Shapiro-Wilk Normality Test (check that p-value is less than 0.5)
+shapiro.test(estimated)
+shapiro.test(error)
+```
+
+d. repeat the experiment in a,b,c for the remaining two models
+
+```{r}
+#-- Model 2
+
+estimated_2 = 0
+error_2 = 0
+n_0 = 10000
+n_1 = 10000
+n = n_0 + n_1
+Q = matrix(c(1,1.1,1.35,3), nrow = 2, byrow = TRUE)
+
+for (i in 1:500){
+  class_0 = mvrnorm(n_0, c(0,0), sqrt(Q))
+  class_1 = mvrnorm(n_1, c(1.4,2.1), sqrt(Q))
+  S = (1/(n-2))*cov(class_1)+cov(class_0)
+  delta_hat_sq = ((n - d -1)/n)*t(colMeans(class_1) - colMeans(class_0)) %*% solve(S) %*% (colMeans(class_1) - colMeans(class_0)) - (n+2)*d/(n_0*n_1)
+  v_hat_0 = (1/(1-(d/n))**2)*(delta_hat_sq + d/(n*pi_0*pi_1))
+  u_hat_0 = -delta_hat_sq/(2*(1-d/n))
+  alfa = u_hat_0/sqrt(v_hat_0)
+  estimated_2[i] = pnorm(alfa)
+  
+  #-- Build the data frame
+  df_0 <- as.data.frame(class_0)
+  df_1 <- as.data.frame(class_1)
+  names(df_0)[1] = "X1"
+  names(df_0)[2] = "X2"
+  names(df_1)[1] = "X1"
+  names(df_1)[2] = "X2"
+  df_class_0 = cbind(df_0, Y = 0)
+  df_class_1 = cbind(df_1, Y = 1)
+  df = rbind(df_class_0, df_class_1)
+  
+  #-- Randomly shuffle
+  rows <- sample(nrow(df))
+  df <- df[rows,]
+  row.names(df) <- NULL
+  
+  #-- build lda and get predictions
+  model <- lda(Y~., data = df)
+  Y_pred = predict(model, df)$class
+  Y_true = df$Y
+  error_2[i] = mean(Y_pred != Y_true)
+}
+```
+
+```{r}
+#-- plot density functions
+plot(density(estimated_2), main = "Density Functions of errors")
+lines(density(error_2), col = 'red')
+
+#-- plot qqnorm plot to verify normality (should be close to linear)
+qqnorm(estimated_2, main = "Normal QQ-plot for estmated error")
+qqnorm(error_2, main = "Normal QQ-plot for LDA error")
+```
+
+```{r}
+#-- Model 3
+
+estimated_3 = 0
+error_3 = 0
+n_0 = 10000
+n_1 = 10000
+n = n_0 + n_1
+Q = matrix(c(1,2.1,2.7,9), nrow = 2, byrow = TRUE)
+
+for (i in 1:500){
+  class_0 = mvrnorm(n_0, c(0,0), sqrt(Q))
+  class_1 = mvrnorm(n_1, c(3,2.5), sqrt(Q))
+  S = (1/(n-2))*cov(class_1)+cov(class_0)
+  delta_hat_sq = ((n - d -1)/n)*t(colMeans(class_1) - colMeans(class_0)) %*% solve(S) %*% (colMeans(class_1) - colMeans(class_0)) - (n+2)*d/(n_0*n_1)
+  v_hat_0 = (1/(1-(d/n))**2)*(delta_hat_sq + d/(n*pi_0*pi_1))
+  u_hat_0 = -delta_hat_sq/(2*(1-d/n))
+  alfa = u_hat_0/sqrt(v_hat_0)
+  estimated_3[i] = pnorm(alfa)
+  
+  #-- Build the data frame
+  df_0 <- as.data.frame(class_0)
+  df_1 <- as.data.frame(class_1)
+  names(df_0)[1] = "X1"
+  names(df_0)[2] = "X2"
+  names(df_1)[1] = "X1"
+  names(df_1)[2] = "X2"
+  df_class_0 = cbind(df_0, Y = 0)
+  df_class_1 = cbind(df_1, Y = 1)
+  df = rbind(df_class_0, df_class_1)
+  
+  #-- Randomly shuffle
+  rows <- sample(nrow(df))
+  df <- df[rows,]
+  row.names(df) <- NULL
+  
+  #-- build lda and get predictions
+  model <- lda(Y~., data = df)
+  Y_pred = predict(model, df)$class
+  Y_true = df$Y
+  error_3[i] = mean(Y_pred != Y_true)
+}
+```
+
+```{r}
+#-- plot density functions
+plot(density(estimated_3), main = "Density Functions of errors")
+lines(density(error_3), col = 'red')
+
+#-- plot qqnorm plot to verify normality (should be close to linear)
+qqnorm(estimated_3, main = "Normal QQ-plot for estmated error")
+qqnorm(error_3, main = "Normal QQ-plot for LDA error")
+```
+
+Explanation : The more variance we have, the harder it becomes to estimate the probability error. This is due to the fact that the points are more sparse now. Which means that one single circle would not be enough to catch all the observations of class_1 and class_0.
+
+# Task-2 : Find optimal k for the k-nearest neighbors classifier (kNN)
+## Model - 1
+
+Note : KNN is not immune to scaling. We should scale variables before applying KNN on real data. Here, however, the data is already normalized.
+
+```{r}
+#-- Build Model 1 according to the described mean and covariance matrix with a total of 2000 observations
+library(MASS)
+set.seed(1)
+n = 1000
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+class_0 = mvrnorm(n, c(0,0), sqrt(Q))
+class_1 = mvrnorm(n, c(1,1), sqrt(Q))
+df_class_0 = cbind(class_0, Y = 0)
+df_class_1 = cbind(class_1, Y = 1)
+df = as.data.frame(rbind(df_class_0, df_class_1))
+
+#-- Randomly shuffle
+rows = sample(nrow(df))
+df = df[rows,]
+row.names(df) = NULL
+head(df)
+```
+
+```{r}
+#-- Test train split and building the KNN classifier
+train_index = sample(nrow(df), 7*nrow(df)/10)
+df_train = df[train_index,]
+df_test = df[-train_index,]
+
+#-- KNN algorithm with fixed k and test error without cross validation
+library(class)
+
+Y_pred = knn(train = df_train,
+             test  = df_test,
+             cl    = df_train$Y, 
+             k     = 50)
+Y_true = df_test$Y
+cat("The error rate is : ", mean(Y_true != Y_pred)*100, "%")
+```
+
+Now to do cross validation using odd K's. The reason we choose odd K's is because we only have two classes to predict from. Therefore, using odd k's would avoid having ties. 
+
+**PS : A tie is when a machine cannot decide the class of the outcome due to similar number of votes. If we have two classes and 4 neighbors, two neighbors can have the outcome 0 and two others can have the outcome 1 which would result in a tie.**
+
+```{r}
+#-- Using the leave-one-out cross validation (jackknife) to determine the optimal k for odd numbers between 1 and half the sample size
+k_to_try = seq(1, nrow(df)/10, by=2)
+error_cv = rep(0, length(k_to_try))
+
+for (i in seq_along(k_to_try)) {
+  Y_pred = as.numeric(knn.cv(train = df[,1:2], 
+                              cl= df$Y, 
+                              k = k_to_try[i]))-1
+  error_cv[i] = mean(Y_pred != df$Y)
+}
+```
+
+
+```{r}
+# plot error vs choice of k
+plot(error_cv, type = "b", col = "dodgerblue", cex = 1, pch = 20, 
+     xlab = "k, number of neighbors", 
+     ylab = "classification error",
+     main = "Error Rate vs Neighbors, Model 1")
+# add line for min error seen
+abline(h = min(error_cv), col = "darkorange", lty = 3)
+```
+
+
+```{r}
+#-- which value of k gives the minimum cross validation?
+min(error_cv)
+k_to_try[which(error_cv == min(error_cv))]
+```
+
+## Model - 2 
+
+```{r}
+#-- Create model
+n = 1000
+Q = matrix(c(1,1.1,1.35,3), nrow = 2, byrow = TRUE)
+class_0 = mvrnorm(n, c(0,0), sqrt(Q))
+class_1 = mvrnorm(n, c(1.4,2.1), sqrt(Q))
+df_class_0 = cbind(class_0, Y = 0)
+df_class_1 = cbind(class_1, Y = 1)
+df = as.data.frame(rbind(df_class_0, df_class_1))
+
+#-- Randomly shuffle
+rows <- sample(nrow(df))
+df <- df[rows,]
+row.names(df) <- NULL
+
+#-- cross validation of the knn classifier
+k_to_try = seq(1, nrow(df)/5, by=2)
+error_cv_2 = rep(0, length(k_to_try))
+
+for (i in seq_along(k_to_try)) {
+  Y_pred = as.numeric(knn.cv(train = df[,1:2], 
+                              cl= df$Y, 
+                              k = k_to_try[i]))-1
+  error_cv_2[i] = mean(Y_pred != df$Y)
+}
+
+#-- plot error vs choice of k
+plot(error_cv_2, type = "b", col = "dodgerblue", cex = 1, pch = 20, 
+     xlab = "k, number of neighbors", 
+     ylab = "classification error",
+     main = "Error Rate vs Neighbors, Model 2")
+# add line for min error seen
+abline(h = min(error_cv_2), col = "darkorange", lty = 3)
+```
+
+```{r}
+#-- which value of k gives the minimum cross validation?
+min(error_cv_2)
+k_to_try[which(error_cv_2 == min(error_cv_2))]
+```
+
+## Model - 3
+
+```{r}
+#-- Create model
+n = 1000
+Q = matrix(c(1,2.1,2.7,9), nrow = 2, byrow = TRUE)
+class_0 = mvrnorm(n, c(0,0), sqrt(Q))
+class_1 = mvrnorm(n, c(3,2.5), sqrt(Q))
+df_class_0 = cbind(class_0, Y = 0)
+df_class_1 = cbind(class_1, Y = 1)
+df = as.data.frame(rbind(df_class_0, df_class_1))
+
+#-- Randomly shuffle
+rows <- sample(nrow(df))
+df <- df[rows,]
+row.names(df) <- NULL
+
+#-- cross validation of the knn classifier
+k_to_try = seq(1, nrow(df)/10, by=2)
+error_cv_3 = rep(0, length(k_to_try))
+
+for (i in seq_along(k_to_try)) {
+  Y_pred = as.numeric(knn.cv(train = df[,1:2], 
+                              cl= df$Y, 
+                              k = k_to_try[i]))-1
+  error_cv_3[i] = mean(Y_pred != df$Y)
+}
+```
+
+```{r}
+#-- plot error vs choice of k
+plot(error_cv_3, type = "b", col = "dodgerblue", cex = 1, pch = 20, 
+     xlab = "k, number of neighbors", 
+     ylab = "classification error",
+     main = "Error Rate vs Neighbors, Model 3")
+# add line for min error seen
+abline(h = min(error_cv_3), col = "darkorange", lty = 3)
+```
+
+
+```{r}
+#-- which value of k gives the minimum cross validation?
+min(error_cv_3)
+k_to_try[which(error_cv_3 == min(error_cv_3))]
+```
+
+Interpretation: the more variability we have, the harder it becomes to classify the information
+
+# Task - 3 - Classification Trees
+
+```{r}
+#-- Simulate data (100 observations, 50 each for each class)
+n = 50
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+class_0 = mvrnorm(n, c(0,0), sqrt(Q))
+class_1 = mvrnorm(n, c(1,1), sqrt(Q))
+df_class_0 = cbind(class_0, Y = 0)
+df_class_1 = cbind(class_1, Y = 1)
+df = as.data.frame(rbind(df_class_0, df_class_1))
+
+#-- Randomly shuffle
+rows = sample(nrow(df))
+df = df[rows,]
+row.names(df) = NULL
+
+#-- grow a classification tree
+library(rpart)
+tree <- rpart(Y~., 
+              data = df,
+              method = "class")
+#summary(tree)
+```
+Note: when you fit a tree using rpart, the fitting routine automatically performs 10-fold CV and stores the errors for later use.
+
+Using a few packages, we can plot the tree in a more visually appealing way.
+
+```{r, warning=FALSE}
+library(rpart.plot)
+prp(tree)
+plotcp(tree)
+rpart.plot(tree)
+```
+
+# Task - 4 - Explore influence of the minimum size of a splittable node in the classification tree
+
+Create a function that generates a dataframe of binary responses Y with two covariates each of which is correlated by means of a normal distribution to an outcome with mean 0 for class 0 and mean 1 for class 1 and a covariance matrix Q.
+
+```{r}
+#--  Function to generate data with n observations
+gen_bin_data = function(n, m0, m1, A, B) {
+  #-- Generate data
+  library(MASS)
+  class_0 = mvrnorm(n/2, m0, sqrt(A))
+  class_1 = mvrnorm(n/2, m1, sqrt(B))
+  df_class_0 = cbind(class_0, Y = 0)
+  df_class_1 = cbind(class_1, Y = 1)
+  df = as.data.frame(rbind(df_class_0, df_class_1))
+  df$Y = as.factor(df$Y)
+  names(df)[1] = "X1"
+  names(df)[2] = "X2"
+  
+  #-- Randomly shuffle
+  rows = sample(nrow(df))
+  df = df[rows,]
+  row.names(df) = NULL
+  return(df)
+}
+
+#-- Function to calculate prediction error on a classifier
+calc_class_err = function(actual, predicted) {
+  mean(actual != predicted)
+}
+
+#-- Test the data generation function
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+test = gen_bin_data(1000,c(0,0), c(1,1), Q, Q)
+
+library(ggplot2)
+ggplot(test, aes(x=X1, y=X2, col = Y)) + geom_point() + theme_bw()
+ggplot(test, aes(x=X1, fill = Y)) + geom_density(alpha = 0.5) + theme_bw()
+
+```
+
+
+```{r}
+#-- Simulate data with a three training sample sizes (100,200 and 500) and one testing sample of size 1000 for model 1
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+df_train_1 = gen_bin_data(100,c(0,0), c(1,1), Q, Q)
+df_train_2 = gen_bin_data(200,c(0,0), c(1,1), Q, Q)
+df_train_3 = gen_bin_data(500,c(0,0), c(1,1), Q, Q)
+df_test = gen_bin_data(1000,c(0,0), c(1,1), Q, Q)
+```
+
+Grow trees on training data and test errors on testing data with a fixed value of splits.
+
+```{r}
+#-- Build function that grows trees on training data, makes predictions on test data and returns errors
+build_tree = function(train_data, test_data, splits) {
+  library(rpart)
+  tree = rpart(Y~., data = train_data, method = "class", minsplit = splits)
+  Y_pred = predict(tree, test_data, type = "class")
+  error = calc_class_err(test_data$Y, Y_pred)
+  return(list(Tree = tree, classification_error = error))
+}
+```
+
+```{r}
+#-- Build tree on three training datasets with fixed minsplit of 3 and calculate three errors.
+error_1 = build_tree(df_train_1, df_test, 3)[[2]]
+error_2 = build_tree(df_train_2, df_test, 3)[[2]]
+error_3 = build_tree(df_train_3, df_test, 3)[[2]]
+c(error_1,error_2,error_3)
+```
+
+As expected, it seems that the bigger the training size, the better the performance. Lets now include the effect of minimum number of splits into account. For that we will create a function that takes test and train data as inputs and return a vector containing erros based on the length of the grid to consider for the splits.
+
+```{r}
+#-- function that returns a vector of errors for a grid if splits
+build_tree_split = function(train_data, test_data, grid) {
+  library(rpart)
+  error = rep(0, length(grid))
+  for (i in seq_along(grid)) {
+    tree = rpart(Y~., data = train_data, method = "class", minsplit = grid[i])
+    Y_pred = predict(tree, test_data, type = "class")
+    error[i] = calc_class_err(test_data$Y, Y_pred)
+  }
+  return(error)
+}
+
+```
+
+Lets iterate over this process a 100 times for repeatability and compute the errors for the three sample sizes. We should get a matrix of 100 rows and 10 columns. Each column corresponds to a certain split in the grid. Then plot three charts containing 10 boxplots each to compare errors of all 10 splits for each of the 3 training sample sizes.
+
+```{r}
+#-- loop 100 times over each of the three training sets
+
+rep_tree_error = function(train_size, test_size, replicates) {
+  
+  #-- Define error matrix and the loop to replicate
+  all_errors = matrix(0, ncol = 10, nrow = 100)
+  for (k in 1:replicates){
+    
+    #-- Generate train and test data
+    df_train = gen_bin_data(train_size,c(0,0), c(1,1), Q, Q)
+    df_test = gen_bin_data(test_size,c(0,0), c(1,1), Q, Q)
+    
+    #-- Choose grids. Here we choose n as the length of class 1
+    splits = round(seq(1, nrow(df_train)/2, length.out = 10))
+    
+    #-- Grow trees on training data with respect to the grid
+    all_errors[k,] = build_tree_split(df_train, df_test, splits)
+  }
+  
+  #-- rename columns of the matrix according to the number of splits
+  error_names = rep(0, ncol(all_errors))
+  for (i in 1:length(splits)){
+    error_names[i] = paste(splits[i], "splits")
+  }
+  colnames(all_errors) = error_names
+  return(all_errors)
+}
+```
+
+Now we apply the above function to all three training sets and plot the results in three different charts and explore results
+
+```{r}
+#-- Compute three error matrices for three training sets of sizes 100, 200 and 500. replication size is 100 and test size sample is 1000
+test_size = 1000
+N = 100
+sample_1 = rep_tree_error(100, test_size, N)
+sample_2 = rep_tree_error(200, test_size, N)
+sample_3 = rep_tree_error(500, test_size, N)
+```
+
+```{r}
+#-- transorming data into data frames and plotting box plots
+library(tidyr)
+df_3 = gather(as.data.frame(sample_3), SplitNumber, ErrorValue)
+df_2 = gather(as.data.frame(sample_2), SplitNumber, ErrorValue)
+df_1 = gather(as.data.frame(sample_1), SplitNumber, ErrorValue)
+
+ggplot(df_3, aes(x=SplitNumber, y=ErrorValue)) + 
+    geom_boxplot() + theme_bw() + theme(axis.text.x = element_text(angle = 45)) + ggtitle("Train size 500")
+
+ggplot(df_2, aes(x=SplitNumber, y=ErrorValue)) + 
+    geom_boxplot() + theme_bw() + theme(axis.text.x = element_text(angle = 45)) + ggtitle("Train size 200")
+
+ggplot(df_1, aes(x=SplitNumber, y=ErrorValue)) + 
+    geom_boxplot() + theme_bw() + theme(axis.text.x = element_text(angle = 45)) + ggtitle("Train size 100")
+
+print(min(colMeans(sample_1)))
+which.min(colMeans(sample_1))
+
+print(min(colMeans(sample_2)))
+which.min(colMeans(sample_2))
+
+print(min(colMeans(sample_3)))
+which.min(colMeans(sample_3))
+```
+
+Interpretation: for a higher train size we notice that minimum number of splits do not have any effect on the overall classification error as opposed to the first two samples that are considerably smaller. We also notice no significant improvement in performance when increasing the training sample.
+
+```{r}
+#-- Comparing with LDA only on sample_3.
+replicated_lda = function(train_size, test_size, replicas){
+  lda_error = rep(0, replicas)
+  for (k in 1:replicas) {
+    
+    #-- Generate train and test data
+    df_train = gen_bin_data(train_size,c(0,0), c(1,1), Q, Q)
+    df_test = gen_bin_data(test_size,c(0,0), c(1,1), Q, Q)
+    
+    #-- build LDA
+    model = lda(Y~., data = df_train_3)
+    Y_pred = predict(model, df_test)$class
+    lda_error = calc_class_err(df_test$Y, Y_pred)
+    return(min(lda_error))
+  }
+}
+
+data.frame(LDA_Error = replicated_lda(500,1000,100), Optimal_Tree_Split = min(colMeans(sample_3)))
+```
+
+LDA shows slightly better performance when the experiment is repeated 100 times. In addition, i noticed a significantly faster computation time when doing the LDA.
+
+# Task - 5 - Bagged LDA and Bagged Trees
+
+```{r}
+#-- Generate data from setting 2
+A = matrix(c(4,4,4,16), nrow = 2, byrow = TRUE)
+
+df_train = gen_bin_data(200,c(0,0), c(1,1), Q, A)
+df_test = gen_bin_data(10000,c(0,0), c(1,1), Q, A)
+    
+ggplot(df_train, aes(x=X1, y=X2, col = Y)) + geom_point() + theme_bw()
+ggplot(df_test, aes(x=X1, y=X2, col = Y)) + geom_point() + theme_bw()
+
+```
+
+Exploring the performance of the bagged tree and setting coob = TRUE to to indicates to use the OOB error rate. We will be calculating its error on the test set once for a different number of base classifiers (an equally spaced grid of 20 values between 0 and 500). We should get a vector of 20 values for the errors
+
+```{r}
+library(ipred)
+grid = seq(10,500, length.out = 50)
+bagged_error = rep(0, length(grid))
+
+for (i in seq_along(grid)) {
+  bagged_tree = bagging(Y~., data = df_train, nbagg = grid[i], coob = TRUE, control = rpart.control(minsplit = 1))
+  Y_pred = predict(bagged_tree, newdata = df_test)
+  bagged_error[i] = calc_class_err(df_test$Y, Y_pred)
+}
+bagged_error
+```
+
+```{r}
+plot(grid, bagged_error, type = "b", col = "dodgerblue", cex = 1, pch = 20, 
+     xlab = "Number of base classifiers", 
+     ylab = "Classification error",
+     main = "Error Rate vs number of bagged trees")
+abline(h = min(bagged_error), col = "darkorange", lty = 3)
+
+min(bagged_error)
+grid[which.min(bagged_error)]
+```
+It seems that for 90 trees we reach a minimum error of about 35%. Lets compare that to a normal tree with similar setting without bagging. We will use the function created in the previous task to grow a tree on the training data and calculate error on the test data. 
+
+```{r}
+build_tree(df_train, df_test, 1)$classification_error
+```
+It seems that bagging does not show an improvement over an unpruned tree of minimum split = 1. In fact without bagging we get better performance. This may be due to one of the two following reasons : 
+1. Bagging a good classifier can make it better, bagging a bad classifier can make it worse. Therefore, there's a significant chance that we are bagging a bad classifier.
+2. Significant improvement by bagging is not expected on large data sets because there bootstrap samples are very similar.
+
+# Task - 6 - Random forest classifier on spam data
+
+1. Exploring influence of the number of randomly chosen variables at each node on the performance of the random forest. For this part, we use the error on the test set.
+
+```{r, warning=FALSE}
+#-- Load data and spit it in test train sets
+library(kernlab)
+data(spam)
+train_index = sample(1:nrow(spam), 2300)
+spam_train = spam[train_index,]
+spam_test = spam[-train_index,]
+```
+
+**IMPORTANT NOTE: ** The main difference between bagging trees and random forests is that Random forests help to reduce tree correlation by injecting more randomness into the tree-growing process. Simply bagging trees can result in tree correlation that limits the effect of variance reduction.
+
+The Hyperparameters to be considered in this task are :
+1. The number of trees in the forest
+2. The number of features to consider at any given split: (also called $m_{try}$)
+
+```{r}
+#-- Build random forest classifier and looping over a grid of trees and a number of variables
+build_forest = function(df_train, df_test, max_tree, m_try){
+  
+  library(randomForest)
+  trees = 1:max_tree
+  forest_error = matrix(0, nrow = length(trees), ncol = length(m_try))
+  
+  #-- loop to iterate over number of trees to grow in the forest
+  for (i in seq_along(trees)) {
+    #-- loop to iterate over the sequence of variables to be considered at each split
+    for (k in seq_along(m_try)) {
+      forest = randomForest(type~., data = df_train, ntree = trees[i], mtry = m_try[k])
+      Y_pred = predict(forest, newdata = df_test)
+      forest_error[i,k] = calc_class_err(df_test$type, Y_pred)
+    }
+  }
+  
+  #-- rename columns of the matrix according to the number of splits
+  error_names = rep(0, ncol(forest_error))
+  for (i in 1:length(m_try)){
+    error_names[i] = paste(m_try[i], "Variables")
+  }
+  colnames(forest_error) = error_names
+  return(forest_error)
+}
+
+#-- test the function for 50 trees and 1,7 and 35 variables
+fores_error = build_forest(spam_train, spam_test, 50, c(1,7,35))
+```
+
+```{r}
+#-- some data manipulation and plotting the error
+library(tidyverse)
+t = as.data.frame(cbind(fores_error, X = 1:nrow(fores_error)))
+error_df = gather(t, VariableNumber, ErrorValue, -X)
+
+ggplot(error_df, aes(x=X, y=ErrorValue, col = VariableNumber )) + 
+  geom_line() + theme_bw() + ggtitle("Error graph") +
+  scale_color_manual(values = c("darkred", "steelblue", "black")) + 
+  geom_hline(yintercept=min(fores_error), linetype="dashed", color = "red")
+```
+
+We see that the most unstable forest if the one with only one variable as opposed to the other two forests with 7 and 35 variable. We notice similar performance of the randomforests constructed with 7 and 35 variables. By default, random trees take $m_{try} = \sqrt{p} = \sqrt{58} = 7$ which results in a minimum error of 4.9% for 40 trees. This is slightly better than the performance reached by tweaking this hyperparameter to 35 and using only 47 trees. Therefore, we can consider that $m_{try} = \sqrt{p}$ is a good rule for better classifier performance.
+
+```{r}
+t[which.min(t$`7 Variables`),c(2,4)]
+```
+
+2. Repeating the first question but with out of bag error for the random forest. In order to do so, we use the full data as input and use the argument subset = training indices of the data we would like to use to train the classifier.
+*We can make sure that it is the out of bag error by calling the classifier and check its output*
+
+```{r}
+#-- Build random forest and see the OOB error (NOT THE TEST ERROR)
+build_forest_OOB = function(df, train, max_tree, m_try){
+  
+  library(randomForest)
+  oob_err = matrix(0, ncol = length(m_try), nrow = max_tree)
+  
+  #-- loop to iterate over the sequence of variables to be considered at each split and calculate OOB error for each
+  for (k in seq_along(m_try)) {
+    forest = randomForest(type~., data = df, ntree = max_tree, mtry = m_try[k], subset = train)
+    oob_err[,k] = forest$err.rate[,1]
+  }
+  
+  #-- rename columns of the matrix according to the number of splits
+  error_names = rep(0, ncol(oob_err))
+  for (i in 1:length(m_try)){
+    error_names[i] = paste(m_try[i], "Variables")
+  }
+  colnames(oob_err) = error_names
+  return(oob_err)
+}
+
+#-- test the function for 50 trees and 1,7 and 35 variables
+forest_oob = build_forest_OOB(spam, train_index, 50, c(1,7,35))
+```
+
+```{r}
+#-- plot the error according to all the randomly chosen number of variables
+t_2 = as.data.frame(cbind(forest_oob, X = 1:nrow(forest_oob)))
+OOB_error_df = gather(t_2, VariableNumber, ErrorValue, -X)
+
+ggplot(OOB_error_df, aes(x=X, y=ErrorValue, col = VariableNumber )) + 
+  geom_line() + theme_bw() + ggtitle("out of bag error graph") +
+  scale_color_manual(values = c("darkred", "steelblue", "black")) +
+  geom_hline(yintercept=min(forest_oob), linetype="dashed", color = "red")
+```
+
+```{r}
+t_2[which.min(t_2$`7 Variables`),c(2,4)]
+```
+In both cases, it seems that the minimum error corresponds to 7 variables which is the number of variables randomly drawn by default.
+
+```{r}
+#-- Compare OOB error and test error
+data.frame(OOB_Error = round(t_2[which.min(t_2$`7 Variables`),c(2)],4)*100 , Test_Error = round(t[which.min(t$`7 Variables`),c(2)],4)*100)
+```
+
+It seems that the Test error is slightly better than the OOB but not significantly better.
+
+# Task - 7 - Compare performance of classifiers on pima data
+
+This notebook is dedicated for task 7 of tutorial 1 whose aim is to test different classifiers on the pima (diabetes in Pima indian Women).
+Two datasets will be considered. Pima.tr and Pima.te. Both contain exactly the same number of features. We will bind them in a sinle data frame and splitting them into a test train split.
+
+```{r}
+rm(list=ls())
+
+#-- load library that contains data
+library(MASS)
+
+#-- load and merge data into one dataset
+data("Pima.tr")
+data("Pima.te")
+df = rbind(Pima.te, Pima.te)
+dim(df)
+head(df)
+sum(is.na(df))
+```
+
+Data seems to contain 664 observations and 8 features including the target variable. We will perform a test train split (250 train and 414 to test)
+
+```{r}
+#-- load file with various useful functions and libraries
+source("functions_tutorial_2.R")
+library(randomForest)
+library(robustbase)
+library(class)
+N = 100
+train_size = 250
+lda_error = qda_error = knn_error = rf_error = rep(0,N)
+
+#-- load to repeat the sampling k_times
+for (k in 1:N){
+  
+  #-- perform a test train split according to the rule specified above
+  train_index = sample(1:nrow(df), train_size)
+  df_train = df[train_index,]
+  df_test = df[-train_index,]
+  
+  #-- build lda and predict error
+  lda.fit = lda(type~., data = df_train)
+  lda.pred = predict(lda.fit, newdata = df_test)$class
+  lda_error[k] = calc_class_err(df_test$type, lda.pred)
+  
+  #-- build qda and predict error
+  qda.fit = qda(type~., data = df_train)
+  qda.pred = predict(qda.fit, newdata = df_test)$class
+  qda_error[k] = calc_class_err(df_test$type, qda.pred)
+  
+  #-- build covMcd and predict error
+  
+  #-- knn with restricted odd k's from 1 to 150 using LOOCV. p = 1 for leave p out cv.
+  k_to_try = seq(3, 150, by = 2)
+  cv_error = rep(0, length(k_to_try))
+  for (i in seq_along(k_to_try)) {
+    knn.cv.pred = knn.cv(train = df[, !names(df_train) == "type"], 
+                      cl = df$type,
+                      p = 1,
+                      k = k_to_try[i])
+    cv_error[i] = calc_class_err(df$type, knn.cv.pred)
+    
+  }
+  best_k = k_to_try[which(cv_error == min(cv_error))]
+  knn.pred = knn(train = df_train[,-8], 
+                 test = df_test[,-8], 
+                 cl = df_train$type, 
+                 k = 1)
+  knn_error[k] = calc_class_err(df_test$type, knn.pred)
+  
+  #-- Random forest classifier
+  rf.fit = randomForest(type~., data = df_train)
+  rf.pred = predict(rf.fit, newdata = df_test)
+  rf_error[k] = calc_class_err(df_test$type, rf.pred)
+}
+
+#-- store results in the form of a data frame for better use
+df_error = data.frame(lda_error = lda_error, qda_error = qda_error, knn_error = knn_error, rf_error = rf_error)
+head(df_error)
+```
+
+Now that we computed errors with 100 repetitions and built a data frame for all the errors, we will plot them in the form of boxplots to visualize.
+It seems that the random forest gives the minimum error out of all the classifiers that we tested which is about 13%.
+
+```{r}
+#-- plot boxplots of results using ggplot
+library(ggplot2)
+library(tidyr)
+df_plot = gather(df_error, Model, ErrorValue)
+ggplot(df_plot, aes(x=Model, y = ErrorValue, col = Model)) + geom_boxplot() + theme_bw() + ggtitle("Classification error comparison")
+
+#-- show table summarizing all average error values of the classifiers in %
+round(apply(df_error,2, mean),4)*100
+```
+
