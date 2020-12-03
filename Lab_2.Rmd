@@ -1,0 +1,401 @@
+---
+title: "Tutorial - 2 - Deep Learning"
+output: html_notebook
+---
+
+# Task - 1 - Explore the performance of the original AdaBoost algorithm.
+
+1. Programmed the original AdaBoosting algorithm with the classification tree in the functions script (functions_tutorial_2.R)
+
+The main difference between Adaboost and bagging methods (including Random Forests) is that, at the end of the process, when all the classifiers built during the iterations will be asked to vote for the target of a new observation, there will be trees with a heavier vote than others. Those are the trees that performed the best during all the iterations (so, they showed very few misclassifications). The total error, in this case, differs from the standard misclassification error since it is a weighted summation.
+
+2. Testing and comparing performance of the boosted tree for boosting iterations 10,25,50,100
+
+```{r}
+rm(list=ls())
+source("functions_tutorial_2.R")
+
+#-- AdaBoosting function iterated for multiple boosting iterations and repeated 30 times for repeatability
+iter = c(10,25,50,100)
+depths = 1:5
+repetitions = 5
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+boosted_error = matrix(0, nrow = repetitions, ncol = length(iter))
+l = list()
+
+#-- loop for number of tree depths
+for (d in depths){
+  cat("\ntree depth = ", d)
+  
+  #-- loop for number of repetitions
+  for (i in 1:repetitions){
+    for(k in seq_along(iter)){
+      
+      #-- generate data
+      df_train = gen_bin_data(200,c(0,0), c(1,1), Q, Q)
+      df_test = gen_bin_data(1000,c(0,0), c(1,1), Q, Q)
+      
+      #-- build boosted tree (for this to work, we need to have numeric values in the outcome)
+      df_train$Y = as.double(df_train$Y)
+      df_test$Y = as.double(df_test$Y)
+      boosted_tree = boost_my_tree(formula = Y ~ X1 + X2 , data = df_train, B = iter[k], max.depth = d)
+      Y_pred = adaboost.tree.classify(boosted_tree, df_test)
+      boosted_error[i,k] = calc_class_err(df_test$Y, Y_pred)
+    }
+  }
+  #-- Print the table of means of each tree depth
+  l[[d]] = colMeans(boosted_error)
+  
+  #-- Plot the errors
+  names = paste(iter)
+  boxplot(boosted_error, names = names, horizontal = TRUE, main = paste("Misclassification rate, max.depth = ", d))
+}
+
+```
+We can see that max.depth = 1 with 25 iterations (trees) seem to give the most accurate results (accuracy of 0.35 shown in the table below and the boxplot above).
+
+```{r}
+err_df = as.data.frame(l)
+colnames(err_df) = paste0(depths)
+rownames(err_df) = paste0(iter)
+err_df[which(err_df == min(err_df)),]
+```
+
+# Task - 2 - Comparative study of the performance of the original AdaBoost algorithm against other classifiers
+
+## Distributional setting 1
+
+```{r}
+library(randomForest)
+library(class)
+
+N = 100
+depths = 1:5
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+lda_error = qda_error = knn_error = rf_error = rep(0,N)
+boosted_error = matrix(0, nrow = N, ncol = length(depths))
+
+for (d in depths) {
+  
+  for (k in 1:N){
+  
+  #-- generate test and train data
+  df_train = gen_bin_data(200,c(0,0), c(1,1), Q, Q)
+  df_test = gen_bin_data(1000,c(0,0), c(1,1), Q, Q)
+  
+  #-- build lda and predict error
+  lda.fit = lda(Y~., data = df_train)
+  lda.pred = predict(lda.fit, newdata = df_test)$class
+  lda_error[k] = calc_class_err(df_test$Y, lda.pred)
+  
+  #-- build qda and predict error
+  qda.fit = qda(Y~., data = df_train)
+  qda.pred = predict(qda.fit, newdata = df_test)$class
+  qda_error[k] = calc_class_err(df_test$Y, qda.pred)
+  
+  #-- build covMcd and predict error
+  
+  #-- knn with restricted odd k's from 1 to 100 using LOOCV. p = 1 for leave p out cv.
+  k_to_try = seq(1, nrow(df_train)/2, by = 2)
+  cv_error = rep(0, length(k_to_try))
+  for (i in seq_along(k_to_try)) {
+    knn.cv.pred = knn.cv(train = df_train[, c(1:2)], 
+                      cl = df_train$Y,
+                      p = 1,
+                      k = k_to_try[i])
+    cv_error[i] = calc_class_err(df_test$Y, knn.cv.pred)
+    
+  }
+  
+  #-- choose best k (only one k) and make prediction
+  best_k = min(k_to_try[which(cv_error == min(cv_error))])
+  knn.pred = knn(train = df_train[,-3], 
+                 test = df_test[,-3], 
+                 cl = df_train$Y, 
+                 k = best_k)
+  knn_error[k] = calc_class_err(df_test$Y, knn.pred)
+  
+  #-- Random forest classifier. Note that it does not work
+  rf.fit = randomForest(Y~., data = df_train)
+  rf.pred = predict(rf.fit, newdata = df_test)
+  rf_error[k] = calc_class_err(df_test$Y, rf.pred)
+  
+  #-- Adaboost classifier for trees of multiple depths (for this to work, Response need to be double)
+  df_train$Y = as.double(df_train$Y)
+  df_test$Y = as.double(df_test$Y)
+  
+  #-- build boosted tree
+  boosted_tree = boost_my_tree(formula = Y ~ X1 + X2 , data = df_train, B = 100, max.depth = d)
+  Y_pred = adaboost.tree.classify(boosted_tree, df_test)
+  boosted_error[k, d] = calc_class_err(df_test$Y, Y_pred)
+  }
+}
+
+```
+
+```{r, fig.height=6, fig.width=10}
+#-- store error results in the form of a data frame for better use
+colnames(boosted_error) = paste0('boost_err_depth_', depths)
+df_error = cbind(data.frame(lda_error = lda_error, qda_error = qda_error, knn_error = knn_error, rf_error = rf_error),boosted_error)
+
+#-- plot boxplots of results using ggplot
+library(ggplot2)
+library(tidyr)
+df_plot = gather(df_error, Model, ErrorValue)
+ggplot(df_plot, aes(x=reorder(Model,ErrorValue), y = ErrorValue)) + 
+  geom_boxplot() + 
+  theme_bw() + 
+  ggtitle("Comparing error for multiple classifiers") + 
+  theme(axis.text.x = element_text(angle = 45)) + 
+  labs(x = 'Classifier', y = "Classification error")
+
+#-- show table summarizing all average error values of the classifiers in %
+as.data.frame(apply(df_error,2, mean))
+```
+
+It seems that out of the boosted trees, the depths 3 and 4 gave the best results for this sort of classifier. However, generally, the lda error on the generated data is the lowest, yeilding an error rate of about 31%.
+
+## Distributional setting 2
+
+```{r}
+N = 100
+depths = 1:5
+A = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+B = matrix(c(4,4,4,16), nrow = 2, byrow = TRUE)
+lda_error = qda_error = knn_error = rf_error = rep(0,N)
+boosted_error = matrix(0, nrow = N, ncol = length(depths))
+
+for (d in depths) {
+  
+  for (k in 1:N){
+  
+  #-- generate test and train data
+  df_train = gen_bin_data(200,c(0,0), c(1,1), A, B)
+  df_test = gen_bin_data(1000,c(0,0), c(1,1), A, B)
+  
+  #-- build lda and predict error
+  lda.fit = lda(Y~., data = df_train)
+  lda.pred = predict(lda.fit, newdata = df_test)$class
+  lda_error[k] = calc_class_err(df_test$Y, lda.pred)
+  
+  #-- build qda and predict error
+  qda.fit = qda(Y~., data = df_train)
+  qda.pred = predict(qda.fit, newdata = df_test)$class
+  qda_error[k] = calc_class_err(df_test$Y, qda.pred)
+  
+  #-- build covMcd and predict error
+  
+  #-- knn with restricted odd k's from 1 to 100 using LOOCV. p = 1 for leave p out cv.
+  k_to_try = seq(1, nrow(df_train)/2, by = 2)
+  cv_error = rep(0, length(k_to_try))
+  for (i in seq_along(k_to_try)) {
+    knn.cv.pred = knn.cv(train = df_train[, c(1:2)], 
+                      cl = df_train$Y,
+                      p = 1,
+                      k = k_to_try[i])
+    cv_error[i] = calc_class_err(df_test$Y, knn.cv.pred)
+    
+  }
+  
+  #-- choose best k (only one k) and make prediction
+  best_k = min(k_to_try[which(cv_error == min(cv_error))])
+  knn.pred = knn(train = df_train[,-3], 
+                 test = df_test[,-3], 
+                 cl = df_train$Y, 
+                 k = best_k)
+  knn_error[k] = calc_class_err(df_test$Y, knn.pred)
+  
+  #-- Random forest classifier. Note that it does not work
+  rf.fit = randomForest(Y~., data = df_train)
+  rf.pred = predict(rf.fit, newdata = df_test)
+  rf_error[k] = calc_class_err(df_test$Y, rf.pred)
+  
+  #-- Adaboost classifier for trees of multiple depths (for this to work, Response need to be double)
+  df_train$Y = as.double(df_train$Y)
+  df_test$Y = as.double(df_test$Y)
+  
+  #-- build boosted tree
+  boosted_tree = boost_my_tree(formula = Y ~ X1 + X2 , data = df_train, B = 100, max.depth = d)
+  Y_pred = adaboost.tree.classify(boosted_tree, df_test)
+  boosted_error[k, d] = calc_class_err(df_test$Y, Y_pred)
+  }
+}
+```
+
+```{r, fig.height=6, fig.width=10}
+#-- store error results in the form of a data frame for better use
+colnames(boosted_error) = paste0('boost_err_depth_', depths)
+df_error = cbind(data.frame(lda_error = lda_error, qda_error = qda_error, knn_error = knn_error, rf_error = rf_error),boosted_error)
+
+#-- plot boxplots of results using ggplot
+library(ggplot2)
+library(tidyr)
+df_plot = gather(df_error, Model, ErrorValue)
+ggplot(df_plot, aes(x=reorder(Model,ErrorValue), y = ErrorValue)) + 
+  geom_boxplot() + 
+  theme_bw() + 
+  ggtitle("Comparing error for multiple classifiers") + 
+  theme(axis.text.x = element_text(angle = 45)) + 
+  labs(x = 'Classifier', y = "Classification error")
+
+#-- show table summarizing all average error values of the classifiers in %
+as.data.frame(apply(df_error,2, mean))
+```
+
+With the distributional setting 2, we notice that the quadratic discriminant analysis yields the best error rate with a 100 repetitions. Boosting does not show a significant improvement in the two settings and discriminant analyses seem to work best with these data. Notice that we have a significant error with boosting trees of depth 1. 
+
+The explanation of the above results can be the following :
+* For Gradient boost, as well as for AdaBoost, the classification rule used in the algorithm should be weak (slightly better than the purely random choice). The choice the learner might not have been weak.
+* Boosting a non-weak classification rule usually delivers poor performance increase which might explain why we got a high error in the Adaboosting with depth 1.
+* It is recommended to use a classification rule with high bias but small variance (boosting allows to reduce bias and not variance). Since we have a higher variance in the second model, we can expect high error rate.
+
+# Task - 3 - Comparative study of implementation times.
+
+In this task, we will compare two powerful Gradient Boosting algorithms: LogitBoost and xgboost.
+
+Whereas random forests build an ensemble of deep independent trees, GBMs build an ensemble of shallow trees in sequence with each tree learning and improving on the previous one. Although shallow trees by themselves are rather weak predictive models, they can be “boosted” to produce a powerful “committee” that, when appropriately tuned, is often hard to beat with other algorithms. In practice, boosted algorithms almost always use decision trees as the base-learner.
+
+The gradient boost is similar to Adaboost but with a regularization parameter $\lambda$ using a gradient descent optimization method to minimize the loss function. the hyperparameter $\lambda$ determines the contribution of each tree on the final outcome and controls how quickly the algorithm proceeds down the gradient descent.
+
+* The logit boost is simply the functional gradient descent algorithm applied to the loss function found in logistic regression, the negative log-likelihood.
+
+* The extreme gradient boosting (XGBoost) is an optimized distributed gradient boosting library that is designed with same boosting and tree-based hyperparameter options but with extra regularization parameters
+
+```{r}
+#-- load the libraries
+library(kernlab)
+library(gbm)
+library(xgboost)
+library(microbenchmark)
+
+#-- load data, recoding ouctome variable and split in test train groups (first 2300 train)
+data(spam)
+spam$type = as.numeric(spam$type) -1
+train_index = sample(1:nrow(spam), 2300)
+spam_train = spam[train_index,]
+spam_test = spam[-train_index,]
+```
+
+
+```{r}
+#-- build function with df_train, boosting iteration and depth are inputs
+LogitBoost = function(df_train, df_test, max_tree, depth_to_try){
+  
+  #-- define the error and time matrix
+  LogitBoost_error = matrix(0, nrow = length(depth_to_try), ncol = length(max_tree))
+  LogitBoost_time = matrix(0, nrow = length(depth_to_try), ncol = length(max_tree))
+  
+  #-- loop over the trees
+  for (i in seq_along(max_tree)) {
+    
+    #-- loop over the depths
+    for (d in seq_along(depth_to_try)){
+      
+      #-- Build Logitboost model and calculate error and elapsed time. (the third element of the list system.time is the elapsed time)
+      LogitBoost_time[d,i] = system.time({
+        model.logit = gbm(type~., data = df_train,  distribution = "bernoulli", n.trees = max_tree[i], interaction.depth = depth_to_try[d])
+      })[[3]]
+      Y_pred = round(predict(model.logit, n.trees = max_tree[i], newdata=df_test, type='response'))
+      LogitBoost_error[d,i] = calc_class_err(df_test$type,Y_pred)
+    }
+    
+  }
+  colnames(LogitBoost_error) = paste0("Boost_iter_",max_tree)
+  rownames(LogitBoost_error) = paste0("Depth_", depth_to_try)
+  
+  colnames(LogitBoost_time) = paste0("Boost_iter_",max_tree)
+  rownames(LogitBoost_time) = paste0("Depth_", depth_to_try)
+  return(list(LogitBoost_error, LogitBoost_time))
+}
+
+```
+
+```{r}
+#-- setting hyperparameters parameters and testing function
+depths = 1:5
+boost_iter = c(500,1000,2000)
+logit.boost = LogitBoost(spam_train, spam_test, boost_iter, depths)
+logit.error = logit.boost[[1]]
+logit.time = logit.boost[[2]]
+```
+
+The function xgboost takes as input Dmatrixs objects, where we specify data and and labels. Note that data does not contain labels. The objective is the kernel and the nround variable is the number of boosting iterations.
+
+```{r}
+Extreem_boost = function(df_train, df_test, max_tree, depth_to_try){
+  
+  #-- define the error and time matrix
+  Extreem_error = matrix(0, nrow = length(depth_to_try), ncol = length(max_tree))
+  Extreem_time = matrix(0, nrow = length(depth_to_try), ncol = length(max_tree))
+  
+  #-- transorming data and labels into Dmatrixs objects to use in the xgboost function
+  train_data = as.matrix(df_train[, !names(df_train) == "type"])
+  train_label = df_train$type
+  test_data = as.matrix(df_test[, !names(spam_test) == "type"])
+  test_label = df_test$type
+  
+  dtrain = xgb.DMatrix(data = train_data, label= train_label)
+  dtest  = xgb.DMatrix(data = test_data, label= test_label)
+  
+  #-- loop over the trees
+  for (i in seq_along(max_tree)) {
+    
+    #-- loop over the depths
+    for (d in seq_along(depth_to_try)){
+      
+      #-- build xgboost classifier with two kernels and time it
+      Extreem_time[d,i] = system.time({
+        model = xgboost(data = dtrain,
+                      nround =  max_tree[i],
+                      objective = c("binary:logistic", "binary:hinge"),
+                      max_depth = depth_to_try[d],
+                      verbose = 0)  #-- to silence training error message
+      })[[3]]
+      pred = as.numeric(predict(model, dtest)>0.5)
+      Extreem_error[d,i] = calc_class_err(test_label, pred)
+    }
+  }
+  colnames(Extreem_error) = paste0("XGBoost_iter_",max_tree)
+  rownames(Extreem_error) = paste0("Depth_", depth_to_try)
+  
+  colnames(Extreem_time) = paste0("XGBBoost_iter_",max_tree)
+  rownames(Extreem_time) = paste0("Depth_", depth_to_try)
+  return(list(Extreem_error, Extreem_time))
+}
+
+```
+
+```{r}
+#-- setting hyperparameters parameters and testing function
+depths = 1:5
+boost_iter = c(500,1000,2000)
+xgb = Extreem_boost(spam_train, spam_test, boost_iter, depths)
+xgb.error = xgb[[1]]
+xgb.time = xgb[[2]]
+```
+
+```{r}
+plot(logit.time[,3], type = "b", col = "dodgerblue", cex = 1, pch = 20, 
+     xlab = "Tree Depth", 
+     ylab = "Runtime in (s)",
+     main = "Runtime for 2000 boost iterations",
+     ylim = c(1,14),
+     xlim = c(1,5))
+lines(xgb.time[,3], type = "b", col = "red", cex = 1, pch = 20)
+```
+
+As we can see, the blue line which represents the run time for different depths of the logit boosting algorithm takes about 5 times longer to compute than the xgboost algorithm (repsented above with the red line). 
+
+```{r}
+#-- comparing runtime of all iterations
+logit.time
+xgb.time
+```
+
+```{r}
+#-- comparing errors 
+logit.error
+xgb.error
+```
+
+When comparing errors, we notice that the performance is almost the same. In some cases, the logitboost outperforms the xgboost and in others it's the opposit. Therefore, the result of this analysis shows that when comparing runtime of both algorithms, it is best to use the xgboost. Note that this function is easily parallelizable with the argument n.threads which would increase even more the speed. Hyperparameter tuning using cross validation would also further improve the accuracy of the model.
