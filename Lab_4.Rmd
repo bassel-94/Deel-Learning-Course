@@ -1,0 +1,348 @@
+---
+title: "Multi-layer Perceptron"
+output: html_notebook
+---
+
+# Task - 1 - Rosenblatt's perceptron
+
+Before defining perceptrons, we will briefly define neural networks. At their most basic levels, neural networks have three layers: an input layer, a hidden layer, and an output layer. The input layer consists of all of the original input features. The majority of the learning takes place in the hidden layer, and the output layer outputs the final predictions.
+
+A perceptron, also known as feedforward deep neural networks, is defined as a densely connected layers where inputs influence each successive layer which then influences the final output layer. When developing the network architecture for a perceptron, we only need to worry about two features: 
+(1) layers and nodes, and (2) activation.
+
+For predicting a binary output (e.g., True/False, Win/Loss), the output layer will still contain only one node and that node will predict the probability of success. However, if we are predicting a multinomial output, the output layer will contain the same number of nodes as the number of classes being predicted.
+
+In the human brain, the biologic neuron receives inputs from many adjacent neurons. When these inputs accumulate beyond a certain threshold the neuron is activated suggesting there is a signal. DNNs work in a similar fashion. The activation function is simply a mathematical function that determines whether or not there is enough informative input at a node to fire a signal to the next layer. Rectified Linear unit (ReLU) is one of them. This function simply takes the summed weighted inputs and transforming them to a  $0$ (not fire) or $>0$ (fire) if there is enough signal.
+
+a. Plotting sepal length and sepal width of the two classes, setosa and versicolor, of the iris data set.
+
+```{r}
+#-- clear environment and load data
+rm(list=ls())
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+df = iris
+
+#-- load and visualize data using ggplot2
+df = df[, c(1,2,5)]
+df = df %>% filter(Species == c("setosa","versicolor"))
+
+g = ggplot(data=df, aes(x=Sepal.Length, y=Sepal.Width, color = Species)) + 
+  geom_point() + 
+  theme_minimal() +
+  xlab("sepal length") + 
+  ylab("petal length") + 
+  ggtitle("Species vs sepal and petal lengths")
+g
+```
+
+The classes seem indeed linearly separable. This means that there must exists a hyperplane which separates the data points in way making all the points belonging positive class lie on one side of hyperplane and the data points belonging to negative class lie on the other side.
+
+b. Write the algorithm of the original Rosenblatt's perceptron to classify the above irises, Setosa or versicolor.
+
+```{r}
+#-- before programming the function, we need to encode the outcome variable to -1 and 1 and split data to x and y inputs
+df[, 4] = 1
+df[df[, 3] == "setosa", 4] = -1
+x = df[,c(1,2)]
+y = df[,4]
+```
+
+weight vector is the normal vector + an intercept (perpendicular to the hyperplance used to seperate the classes). The normal vector $\vec{w}^T = [b,w_1,w_1]^T$. We have two weights for the two variables; sepal length and sepal width. The classification rule then checks whether the data point lies on the positive side of the hyperplane or on the negative side, it does so by checking the dot product of the $\vec{w}$ with $\vec{x}_i$. 
+
+```{r}
+#-- build training function
+perceptron.train = function(x, y, eta, niter, normal_vector, intercept) {
+        
+        # build weight vector
+        weight = c(intercept, normal_vector)
+        errors = rep(0, niter)
+        
+        # loop over number of epochs niter
+        for (j in 1:niter) {
+                
+                # loop through training data set
+                for (i in 1:length(y)) {
+                        
+                        # Predict binary label using Heaviside activation function
+                        z = sum(weight[2:length(weight)]*as.numeric(x[i, ])) + weight[1]
+                        if(z < 0) {
+                                ypred = -1
+                        } else {
+                                ypred = 1
+                        }
+                        
+                        # Change weight - but do anything if the predicted value is correct
+                        weightdiff = eta * (y[i] - ypred)*c(1, as.numeric(x[i, ]))
+                        weight = weight + weightdiff
+                        
+                        # Update error function
+                        if ((y[i] - ypred) != 0.0) {
+                                errors[j] = errors[j] + 1
+                        }
+                }
+        }
+        print(weight)
+        
+        # return weight to decide between the two species and the error
+        return(list(errors = errors, normal_vector = weight[-1], intercept = weight[1]))
+}
+
+#-- build classification function
+perceptron.classify = function(x_new, normal_vector, intercept){
+  # build weight vector
+  weight = c(intercept, normal_vector)
+  y_pred = rep(0, dim(x_new)[1])
+  
+  #-- loop over the test data and make classification
+  for (i in 1:dim(x_new)[1]) {
+    
+    # Predict binary label using Heaviside activation function
+    z = sum(weight[2:length(weight)]*as.numeric(x_new[i, ])) + weight[1]
+    if(z < 0) {
+      y_pred[i] = -1
+      }
+    else {
+      y_pred[i] = 1
+    }
+  }
+  return(y_pred)
+}
+
+```
+
+
+```{r}
+#-- test train split and apply function
+train_sample = sample(1: nrow(x), 0.8*nrow(x))
+x_train = x[train_sample,]
+y_train = y[train_sample]
+x_test = x[-train_sample,]
+y_test = y[-train_sample]
+
+err = perceptron.train(x_train, y_train, 0.01, 20, c(0,0),0)
+cat("training error is : ", err$errors, "\n")
+
+#-- make prediction and calculate error. it should be zero because they are perfectly separable
+source("functions_tutorial_2.R")
+y_pred = perceptron.classify(x_test, err$normal_vector, err$intercept)
+calc_class_err(y_test, y_pred)
+```
+
+c. Visualize training rule of the perceptron
+
+```{r}
+#-- Visualize the classification rule as a segment (hyperplane separation). First we get the slope of the hyperplane as -dy/dx
+a = -err$normal_vector[1]/err$normal_vector[2]
+g + geom_abline(intercept = err$intercept, slope = a)
+```
+
+d. XOR data visualization
+
+```{r}
+#-- function to generate XOR data
+gen_fuzzy_XOR = function(n, m1, m2, m3, m4, A) {
+  library(MASS)
+  d_1 = mvrnorm(n/4, m1, sqrt(A))
+  d_2 = mvrnorm(n/4, m2, sqrt(A))
+  d_3 = mvrnorm(n/4, m3, sqrt(A))
+  d_4 = mvrnorm(n/4, m4, sqrt(A))
+  
+  df_class_0 = cbind(rbind(d_1,d_2), Y = -1)
+  df_class_1 = cbind(rbind(d_3,d_4), Y = 1)
+  
+  df = as.data.frame(rbind(df_class_0, df_class_1))
+  names(df)[1] = "X1"
+  names(df)[2] = "X2"
+  
+  #-- Randomly shuffle
+  rows = sample(nrow(df))
+  df = df[rows,]
+  row.names(df) = NULL
+  return(df)
+}
+
+#-- generate and plot data
+Q = matrix(c(0.01,0,0,0.01), nrow = 2, byrow = TRUE)
+df = gen_fuzzy_XOR(100, c(0,0), c(1,1), c(0,1), c(1,0),Q)
+
+#-- Visualize distributional setting of the data
+g2 = ggplot(df, aes(x=X1, y=X2, col = Y)) + geom_point() + theme_bw() + ggtitle("Scatter plot of the XOR data")
+g2
+```
+
+The data generated is not linearly separable.
+
+e. build generalized perceptron
+
+```{r}
+perceptron.train.2 = function(df, int, n_vec){
+  x = df[, c(1:2)]
+  y = df[, 3]
+  x_hat = cbind(x, x[,1]* x[,2], x[,1]**2, x[,2]**2)
+  perceptron.train(x_hat, y, 0.01, 100, n_vec, int)
+}
+
+perceptron.classify.2 = function(df_test, int, n_vec){
+  x_new = df_test[, c(1:2)]
+  x_hat_new = cbind(x_new, x_new[,1]* x_new[,2], x_new[,1]**2, x_new[,2]**2)
+  perceptron.classify(x_hat_new, normal_vector = n_vec, intercept = int)
+}
+
+#-- do a test train split and calculate error of perceptron
+set.seed(1)
+train_index = sample(1:nrow(df), 0.5*nrow(df))
+df_train = df[train_index,]
+df_test = df[-train_index,]
+
+train = perceptron.train.2(df_train, 0, rep(0,5))
+y_pred = perceptron.classify.2(df_test, n_vec =  train$normal_vector, int = train$intercept)
+
+error = calc_class_err(df_test$Y, y_pred)
+error
+```
+
+We notice that we get an impressive performance of 94% when applying a perceptron to a dataset that is not linearly separable. Clearly this is due to the fact that we added some polynomial combination of the variables. We know that the classes are not linearly separable. However, we projected the data in a higher dimension and separated them linearly.
+
+f. Visualize classification rule
+
+```{r}
+#-- create a grid
+mins <- c(min(df_train[,1]), min(df_train[,2]))
+maxs <- c(max(df_train[,1]), max(df_train[,2]))
+perStretch <- 0.04
+mins[1] <- mins[1] - perStretch * (maxs[1] - mins[1])
+mins[2] <- mins[2] - perStretch * (maxs[2] - mins[2])
+maxs[1] <- maxs[1] + perStretch * (maxs[1] - mins[1])
+maxs[2] <- maxs[2] + perStretch * (maxs[2] - mins[2])
+
+#-- Expand the grid 
+frequency <- 100
+gx <- seq(mins[1], maxs[1], length=frequency)
+gy <- seq(mins[2], maxs[2], length=frequency)
+Xgrid <- matrix(as.numeric(as.matrix(expand.grid(gx, gy))), ncol =2)
+
+#-- make predictions
+head(Xgrid)
+yPredGrid = perceptron.classify.2(Xgrid, 
+                                  n_vec = train$normal_vector, 
+                                  int = train$intercept)
+#-- plot
+source("filledContour2.R")
+filled.contour2(gx, gy, 
+                matrix(yPredGrid, nrow=length(gx), ncol=length(gy), byrow=FALSE), 
+                levels=c(-1.2,-1:5/5,1.2),
+                xlab = "X1", ylab = "X2", 
+                xlim = c(mins[1], maxs[1]), ylim = c(mins[2], maxs[2]))
+points(df_train[,1:2], col = c("red", "blue")[df_train[,3] / 2 + 1.5])
+```
+
+# Task - 2 - Classification with a multilayer perceptron
+
+a. Generate and visualize data from distributional setting 1
+
+```{r}
+set.seed(1)
+Q = matrix(c(1,1,1,4), nrow = 2, byrow = TRUE)
+df = gen_bin_data(200,c(0,0), c(1,1), Q, Q)
+ggplot(df, aes(x=X1, y=X2, col = Y)) + geom_point() + theme_bw() +ggtitle("Classes from distributional setting 1")
+head(df)
+```
+
+Previously in lab 2, we tested multiple classifiers. The best ones were LDA and random forests with errors of about 30%. This error is due to the fact that these classes are not lienarly separable.
+
+```{r}
+library(neuralnet)
+df$Y = as.numeric(df$Y)-1
+nn = neuralnet(Y~., data = df, 
+               hidden = 0, 
+               learningrate = 0.01, 
+               linear.output = FALSE, 
+               act.fct = "logistic")
+plot(nn)
+nn$result.matrix
+```
+
+The above plot shows the input neurons (X1 and X2) and no hidden layers as described in the lab. The black lines show the connections with weights which are calculated using the back propagation algorithm. The blue line is the displays the bias term. Then the output is one neuron which yeilds predictions (1 and 0).
+
+```{r}
+#-- Making a prediction in neural networks
+Y_pred = compute(nn, df[,c(1:2)])
+Y_pred = round(as.numeric(Y_pred$net.result))
+head(Y_pred)
+calc_class_err(df$Y, Y_pred)
+```
+
+The error, we expected from previous parts in the labs, is still around 30%. I did not perform a test train split for this part. The error computed is the training error.
+
+```{r}
+#-- Visualize the prediction rule of the neural network
+mins <- c(min(df[,1]), min(df[,2]))
+maxs <- c(max(df[,1]), max(df[,2]))
+perStretch <- 0.04
+mins[1] <- mins[1] - perStretch * (maxs[1] - mins[1])
+mins[2] <- mins[2] - perStretch * (maxs[2] - mins[2])
+maxs[1] <- maxs[1] + perStretch * (maxs[1] - mins[1])
+maxs[2] <- maxs[2] + perStretch * (maxs[2] - mins[2])
+
+#-- Expand the grid 
+frequency <- 300
+gx <- seq(mins[1], maxs[1], length=frequency)
+gy <- seq(mins[2], maxs[2], length=frequency)
+Xgrid <- matrix(as.numeric(as.matrix(expand.grid(gx, gy))), ncol =2)
+
+#-- make predictions
+yPredGrid = round(as.numeric(compute(nn, Xgrid)$net.result))
+  
+#-- plot
+filled.contour2(gx, gy, 
+                matrix(yPredGrid, nrow=length(gx), ncol=length(gy), byrow=FALSE), 
+                levels=c(-1.2,-1:5/5,1.2),
+                xlab = "X1", ylab = "X2", 
+                xlim = c(mins[1], maxs[1]), ylim = c(mins[2], maxs[2]))
+points(df[,1:2], col = c("red", "blue")[df[,3] / 2 + 1.5])
+```
+
+b. Comparing with LDA
+
+```{r}
+#-- build lda model and make predictions
+library(MASS)
+model.lda = lda(Y~., data = df)
+Y_pred.lda = predict(model.lda, df)$class
+calc_class_err(df$Y, Y_pred.lda)
+```
+
+```{r}
+#-- create a grid
+mins <- c(min(df[,1]), min(df[,2]))
+maxs <- c(max(df[,1]), max(df[,2]))
+perStretch <- 0.04
+mins[1] <- mins[1] - perStretch * (maxs[1] - mins[1])
+mins[2] <- mins[2] - perStretch * (maxs[2] - mins[2])
+maxs[1] <- maxs[1] + perStretch * (maxs[1] - mins[1])
+maxs[2] <- maxs[2] + perStretch * (maxs[2] - mins[2])
+
+#-- Expand the grid 
+frequency <- 300
+gx <- seq(mins[1], maxs[1], length=frequency)
+gy <- seq(mins[2], maxs[2], length=frequency)
+Xgrid <- as.data.frame(matrix(as.numeric(as.matrix(expand.grid(gx, gy))), ncol =2))
+names(Xgrid)[1] = "X1"
+names(Xgrid)[2] = "X2"
+
+#-- make predictions
+yPredGrid = predict(model.lda, Xgrid)$class
+
+#-- plot
+source("filledContour2.R")
+filled.contour2(gx, gy, 
+                matrix(yPredGrid, nrow=length(gx), ncol=length(gy), byrow=FALSE), 
+                levels=c(-1.2,-1:5/5,1.2),
+                xlab = "X1", ylab = "X2", 
+                xlim = c(mins[1], maxs[1]), ylim = c(mins[2], maxs[2]))
+points(df[,1:2], col = c("red", "blue")[df[,3] / 2 + 1.5])
+```
+
+**TODO** get the LDA normal vector and compare it to the normal vector in neural network. Calculate the angle using dot product.
