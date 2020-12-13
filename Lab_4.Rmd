@@ -49,7 +49,7 @@ x = df[,c(1,2)]
 y = df[,4]
 ```
 
-weight vector is the normal vector + an intercept (perpendicular to the hyperplance used to seperate the classes). The normal vector $\vec{w}^T = [b,w_1,w_1]^T$. We have two weights for the two variables; sepal length and sepal width. The classification rule then checks whether the data point lies on the positive side of the hyperplane or on the negative side, it does so by checking the dot product of the $\vec{w}$ with $\vec{x}_i$. 
+weight vector is the normal vector + an intercept (perpendicular to the hyperplance used to seperate the classes). The normal vector $\vec{w}^T = [b,w_1,w_2]^T$. We have two weights for the two variables; sepal length and sepal width. The classification rule then checks whether the data point lies on the positive side of the hyperplane or on the negative side, it does so by checking the dot product of the $\vec{w}$ with $\vec{x}_i$. 
 
 ```{r}
 #-- build training function
@@ -73,7 +73,7 @@ perceptron.train = function(x, y, eta, niter, normal_vector, intercept) {
                                 ypred = 1
                         }
                         
-                        # Change weight - but do anything if the predicted value is correct
+                        # Change weight - but don't do anything if the predicted value is correct
                         weightdiff = eta * (y[i] - ypred)*c(1, as.numeric(x[i, ]))
                         weight = weight + weightdiff
                         
@@ -203,7 +203,7 @@ error = calc_class_err(df_test$Y, y_pred)
 error
 ```
 
-We notice that we get an impressive performance of 94% when applying a perceptron to a dataset that is not linearly separable. Clearly this is due to the fact that we added some polynomial combination of the variables. We know that the classes are not linearly separable. However, we projected the data in a higher dimension and separated them linearly.
+We notice that we get an impressive performance of 80% when applying a generalized perceptron to a dataset that is not linearly separable. Clearly this is due to the fact that we added some polynomial combination of the variables(i.e. projected the data into higher dimensions). We know that the classes are not linearly separable in their origin space. However, we projected the data in a higher dimension space, we could separat them linearly.
 
 f. Visualize classification rule
 
@@ -240,7 +240,7 @@ points(df_train[,1:2], col = c("red", "blue")[df_train[,3] / 2 + 1.5])
 
 # Task - 2 - Classification with a multilayer perceptron
 
-a. Generate and visualize data from distributional setting 1
+a. Generate 200 data points and visualize data from distributional setting 1 of tutorial 1
 
 ```{r}
 set.seed(1)
@@ -253,6 +253,7 @@ head(df)
 Previously in lab 2, we tested multiple classifiers. The best ones were LDA and random forests with errors of about 30%. This error is due to the fact that these classes are not lienarly separable.
 
 ```{r}
+#-- build and train a single neuron neural network (no hidden neurons, just input observations and output)
 library(neuralnet)
 df$Y = as.numeric(df$Y)-1
 nn = neuralnet(Y~., data = df, 
@@ -260,6 +261,8 @@ nn = neuralnet(Y~., data = df,
                learningrate = 0.01, 
                linear.output = FALSE, 
                act.fct = "logistic")
+
+#-- plot the neural network's architecture and visualize the result matrix that contains the weight vectors and the intercept.
 plot(nn)
 nn$result.matrix
 ```
@@ -267,14 +270,15 @@ nn$result.matrix
 The above plot shows the input neurons (X1 and X2) and no hidden layers as described in the lab. The black lines show the connections with weights which are calculated using the back propagation algorithm. The blue line is the displays the bias term. Then the output is one neuron which yeilds predictions (1 and 0).
 
 ```{r}
-#-- Making a prediction in neural networks
+#-- Making a prediction in neural networks and check accuracy
 Y_pred = compute(nn, df[,c(1:2)])
 Y_pred = round(as.numeric(Y_pred$net.result))
 head(Y_pred)
 calc_class_err(df$Y, Y_pred)
 ```
 
-The error, we expected from previous parts in the labs, is still around 30%. I did not perform a test train split for this part. The error computed is the training error.
+The error, as we saw from previous parts in the labs, is still around 30%. This is due to the fact that the classifier in a single neuron neural network still considers a linear classification rule in the original space of the data (i.e. in two dimensions). 
+I did not perform a test train split for this part. The error computed is the training error.
 
 ```{r}
 #-- Visualize the prediction rule of the neural network
@@ -303,11 +307,12 @@ filled.contour2(gx, gy,
                 xlim = c(mins[1], maxs[1]), ylim = c(mins[2], maxs[2]))
 points(df[,1:2], col = c("red", "blue")[df[,3] / 2 + 1.5])
 ```
+The above plot confirms that the classification rule is linear. 
 
 b. Comparing with LDA
 
 ```{r}
-#-- build lda model and make predictions
+#-- build lda model and make predictions. calculate error for the training set.
 library(MASS)
 model.lda = lda(Y~., data = df)
 Y_pred.lda = predict(model.lda, df)$class
@@ -345,4 +350,23 @@ filled.contour2(gx, gy,
 points(df[,1:2], col = c("red", "blue")[df[,3] / 2 + 1.5])
 ```
 
-**TODO** get the LDA normal vector and compare it to the normal vector in neural network. Calculate the angle using dot product.
+Now we can compare the normal vectors of the seperating lines of both the neural network and the LDA algorithm by computing the dot product and calculating the angle
+
+```{r}
+#-- get normal vector for lda
+a = as.vector(c(model.lda[[4]][1], model.lda[[4]][2]))
+
+#-- get normal vector for nn
+b = as.vector(c(nn$result.matrix[5,1],nn$result.matrix[6,1]))
+names(normal.vec.nn) = NULL
+
+#-- print values
+cat("\n Normal vector of LDA \n", a)
+cat("\n Normal vector of Neural Network \n", b)
+
+#-- compute angle : (dot product of a and b gives norm a * norm b * cos (a,b)). The angle with this formula is expressed in radians.
+theta = acos(sum(a*b)/(sqrt(sum(a*a))*sqrt(sum(b*b))))
+cat("\n The angle between the two normal vectors of LDA and NN in degrees is \n", theta*180/pi)
+```
+
+We can clearly see that the classification rule of LDA and a single neuron neural network is quite similar (almost the same in fact). This is proven through computing the training errors and the angle between the linear classification rules. Both are indeed very similar. 
